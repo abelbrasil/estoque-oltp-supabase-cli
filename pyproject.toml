@@ -1,0 +1,20 @@
+[project]
+name = "estoque-oltp"
+version = "0.1.0"
+description = "Teste OLTP de estoque hospitalar no Supabase (ledger, saldo por trigger, usuarios A/B/C)"
+requires-python = ">=3.12,<3.15"
+
+[tool.poetry]
+packages = [{ include = "estoque", from = "src" }]
+
+[tool.poetry.dependencies]
+psycopg2-binary = "^2.9.13"
+python-dotenv = "^1.2.4"
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project.scripts]
+sql = "estoque.sql_runner:main"
+gerador = "estoque.gerador:main"
+registrador = "estoque.registrador:main"

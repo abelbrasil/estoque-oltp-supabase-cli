@@ -1,0 +1,17 @@
+# Ambiente virtual e cache do Python
+.venv/
+__pycache__/
+*.pyc
+
+# Segredos (nunca versionar)
+*.env
+
+# Saídas de execução
+logs/
+
+# Supabase CLI (estado local)
+supabase/.temp/
+
+# Editor e sistema
+.vscode/
+.DS_Store
