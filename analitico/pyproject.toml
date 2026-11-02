@@ -1,0 +1,25 @@
+[project]
+name = "estoque-analitico"
+version = "0.1.0"
+description = "Painel de decisão de estoque: carga das origens, modelo analítico em DuckDB e painel Streamlit"
+requires-python = ">=3.12,<3.15"
+
+[tool.poetry]
+packages = [{ include = "analitico", from = "src" }]
+
+[tool.poetry.dependencies]
+duckdb = "^1.4"
+psycopg2-binary = "^2.9.10"
+python-dotenv = "^1.1"
+pandas = "^2.2"
+streamlit = "^1.60"
+plotly = "^6.0"
+tzdata = "*"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project.scripts]
+carga = "analitico.carga:main"
+painel = "analitico.painel:main"
