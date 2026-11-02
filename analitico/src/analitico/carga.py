@@ -4,6 +4,10 @@ Uso:
   poetry run carga                    # carga incremental com verificação dia a dia
   poetry run carga --recarregar-tudo  # apaga o ledger copiado e recarrega desde o início
   poetry run carga --so-transformar   # não acessa a origem; só recalcula staging, marts e testes
+  poetry run carga --a-cada 15        # fica rodando: uma carga a cada 15 minutos (Ctrl+C para parar)
+
+Se todos os testes passarem, as marts são publicadas para a API (ver publicacao.py).
+Se algo falhar, a API continua servindo a última versão boa, e o motivo fica em dados/ultima_carga.json.
 """
 import argparse
 import sys
@@ -12,6 +16,7 @@ from datetime import datetime
 
 from analitico.config import ARQUIVO_DW, PASTA_SQL, conectar_dw, hoje
 from analitico.origens import estoque_supabase
+from analitico.publicacao import gravar_status, publicar
 
 DDL_META = """
 create schema if not exists meta;
@@ -51,17 +56,42 @@ def main():
     ap = argparse.ArgumentParser(description="Carga do banco analítico")
     ap.add_argument("--recarregar-tudo", action="store_true")
     ap.add_argument("--so-transformar", action="store_true")
+    ap.add_argument("--a-cada", type=float, metavar="MINUTOS", help="repete a carga a cada N minutos")
     args = ap.parse_args()
+    if not args.a_cada:
+        executar(args)
+        return
+    print(f"Modo contínuo: uma carga a cada {args.a_cada:g} min. Ctrl+C para parar.")
+    try:
+        while True:
+            print(f"\n=== {datetime.now():%d/%m/%Y %H:%M:%S} ===")
+            try:
+                executar(args)
+            except SystemExit:
+                pass  # falha já registrada; a próxima rodada tenta de novo
+            except Exception as e:
+                print(f"Carga com erro: {e}", file=sys.stderr)
+            args.recarregar_tudo = False
+            time.sleep(args.a_cada * 60)
+    except KeyboardInterrupt:
+        print("\nModo contínuo encerrado.")
 
+
+def executar(args):
     inicio = datetime.now()
     t0 = time.time()
-    dw = conectar_dw()
+    try:
+        dw = conectar_dw()
+    except Exception as e:  # tipicamente: outra carga em andamento segurando o arquivo
+        gravar_status({"status": "ERRO", "inicio": inicio, "fim": datetime.now(), "publicado": False,
+                       "mensagem": f"Não foi possível abrir o banco de trabalho: {str(e).strip()[:300]}"})
+        raise SystemExit(f"Não foi possível abrir {ARQUIVO_DW}. Outra carga está rodando?\n{e}")
     dw.execute(DDL_META)
     ref = hoje()
     dw.execute("create or replace table meta.parametros as select ?::date as data_referencia", [ref])
 
     res = None
-    status, mensagem, falhas = "OK", "", []
+    status, mensagem, falhas, publicado = "OK", "", [], False
     try:
         if not args.so_transformar:
             print("Extraindo origem: estoque (Supabase)...")
@@ -80,18 +110,27 @@ def main():
         status, mensagem = "ERRO", str(e).strip()[:500]
         raise
     finally:
-        dw.execute(
-            "insert into meta.cargas (inicio, fim, data_referencia, status, dias_verificados, dias_recarregados,"
-            " linhas_movimento, testes_com_falha, mensagem) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [inicio, datetime.now(), ref, status,
-             res.dias_verificados if res else None, len(res.dias_recarregados) if res else None,
-             res.linhas_movimento if res else None, len(falhas), mensagem],
-        )
+        registro = {
+            "inicio": inicio, "fim": datetime.now(), "data_referencia": ref, "status": status,
+            "dias_verificados": res.dias_verificados if res else None,
+            "dias_recarregados": len(res.dias_recarregados) if res else None,
+            "linhas_movimento": res.linhas_movimento if res else None,
+            "testes_com_falha": len(falhas), "mensagem": mensagem,
+        }
+        dw.execute(f"insert into meta.cargas ({', '.join(registro)}) values ({', '.join('?' * len(registro))})",
+                   list(registro.values()))
+        registro["id"] = dw.execute("select max(id) from meta.cargas").fetchone()[0]
+        if status == "OK":
+            publicar(dw)
+            publicado = True
         dw.close()
+        gravar_status({**registro, "publicado": publicado})
 
-    print(f"Carga {status} em {time.time() - t0:.1f}s -> {ARQUIVO_DW}")
-    if status != "OK":
-        print(f"Atenção: {mensagem}", file=sys.stderr)
+    if publicado:
+        print(f"Carga OK em {time.time() - t0:.1f}s. Publicado para a API.")
+    else:
+        print(f"Carga {status}: NADA foi publicado; a API continua com a versão anterior.\nMotivo: {mensagem}",
+              file=sys.stderr)
         sys.exit(1)
 
 

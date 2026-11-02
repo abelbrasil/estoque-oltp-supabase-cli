@@ -12,8 +12,20 @@ PASTA_SQL = RAIZ / "sql"
 
 load_dotenv(RAIZ / "config.env")
 
+# Banco de trabalho: só a carga abre (leitura e escrita).
 ARQUIVO_DW = RAIZ / os.environ.get("DW_ARQUIVO", "dados/dw.duckdb")
+# Banco publicado: cópia das marts, trocada de uma vez ao fim de cada carga bem-sucedida. Só a API lê.
+ARQUIVO_PUBLICADO = RAIZ / os.environ.get("DW_PUBLICADO", "dados/publicado.duckdb")
+# Resultado da última carga (inclusive das que falharam e não publicaram).
+ARQUIVO_STATUS = RAIZ / os.environ.get("DW_STATUS", "dados/ultima_carga.json")
 FUSO = os.environ.get("FUSO", "America/Fortaleza")
+
+API_HOST = os.environ.get("API_HOST", "127.0.0.1")
+API_PORTA = int(os.environ.get("API_PORTA", "8000"))
+# Origens do navegador autorizadas a chamar a API (separadas por vírgula). O padrão cobre o Vite em desenvolvimento.
+API_ORIGENS_CORS = [o.strip() for o in os.environ.get("API_ORIGENS_CORS", "http://localhost:5173").split(",") if o.strip()]
+# Pasta do frontend já compilado (npm run build). Se existir, a API também serve o painel em "/".
+PASTA_WEB = RAIZ / "web" / "dist"
 
 
 def hoje() -> date:
